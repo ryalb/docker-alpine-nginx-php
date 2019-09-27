@@ -1,4 +1,46 @@
-FROM frolvlad/alpine-glibc as builder
+FROM alpine:3.9
+
+ENV LANG=C.UTF-8
+
+# Here we install GNU libc (aka glibc) and set C.UTF-8 locale as default.
+
+RUN ALPINE_GLIBC_BASE_URL="https://github.com/sgerrand/alpine-pkg-glibc/releases/download" && \
+    ALPINE_GLIBC_PACKAGE_VERSION="2.29-r0" && \
+    ALPINE_GLIBC_BASE_PACKAGE_FILENAME="glibc-$ALPINE_GLIBC_PACKAGE_VERSION.apk" && \
+    ALPINE_GLIBC_BIN_PACKAGE_FILENAME="glibc-bin-$ALPINE_GLIBC_PACKAGE_VERSION.apk" && \
+    ALPINE_GLIBC_I18N_PACKAGE_FILENAME="glibc-i18n-$ALPINE_GLIBC_PACKAGE_VERSION.apk" && \
+    apk add --no-cache --virtual=.build-dependencies wget ca-certificates && \
+    echo \
+        "-----BEGIN PUBLIC KEY-----\
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApZ2u1KJKUu/fW4A25y9m\
+        y70AGEa/J3Wi5ibNVGNn1gT1r0VfgeWd0pUybS4UmcHdiNzxJPgoWQhV2SSW1JYu\
+        tOqKZF5QSN6X937PTUpNBjUvLtTQ1ve1fp39uf/lEXPpFpOPL88LKnDBgbh7wkCp\
+        m2KzLVGChf83MS0ShL6G9EQIAUxLm99VpgRjwqTQ/KfzGtpke1wqws4au0Ab4qPY\
+        KXvMLSPLUp7cfulWvhmZSegr5AdhNw5KNizPqCJT8ZrGvgHypXyiFvvAH5YRtSsc\
+        Zvo9GI2e2MaZyo9/lvb+LbLEJZKEQckqRj4P26gmASrZEPStwc+yqy1ShHLA0j6m\
+        1QIDAQAB\
+        -----END PUBLIC KEY-----" | sed 's/   */\n/g' > "/etc/apk/keys/sgerrand.rsa.pub" && \
+    wget \
+        "$ALPINE_GLIBC_BASE_URL/$ALPINE_GLIBC_PACKAGE_VERSION/$ALPINE_GLIBC_BASE_PACKAGE_FILENAME" \
+        "$ALPINE_GLIBC_BASE_URL/$ALPINE_GLIBC_PACKAGE_VERSION/$ALPINE_GLIBC_BIN_PACKAGE_FILENAME" \
+        "$ALPINE_GLIBC_BASE_URL/$ALPINE_GLIBC_PACKAGE_VERSION/$ALPINE_GLIBC_I18N_PACKAGE_FILENAME" && \
+    apk add --no-cache \
+        "$ALPINE_GLIBC_BASE_PACKAGE_FILENAME" \
+        "$ALPINE_GLIBC_BIN_PACKAGE_FILENAME" \
+        "$ALPINE_GLIBC_I18N_PACKAGE_FILENAME" && \
+    \
+    rm "/etc/apk/keys/sgerrand.rsa.pub" && \
+    /usr/glibc-compat/bin/localedef --force --inputfile POSIX --charmap UTF-8 "$LANG" || true && \
+    echo "export LANG=$LANG" > /etc/profile.d/locale.sh && \
+    \
+    apk del glibc-i18n && \
+    \
+    rm "/root/.wget-hsts" && \
+    apk del .build-dependencies && \
+    rm \
+        "$ALPINE_GLIBC_BASE_PACKAGE_FILENAME" \
+        "$ALPINE_GLIBC_BIN_PACKAGE_FILENAME" \
+        "$ALPINE_GLIBC_I18N_PACKAGE_FILENAME"
 
 COPY ./instantclient /
 
@@ -25,19 +67,12 @@ RUN apk update \
         php7-dev \
         php7-pear \
         gcc musl-dev make \
-    && echo 'instantclient,/usr/lib/instantclient_12_1' | pecl install -f oci8 \
-    && echo 'extension=oci8.so' > /etc/php7/conf.d/oracle.ini \
-    && php -m
+    && php --version
 
-FROM alpine:3.7
+COPY oci8-2.2.0.tgz .
+RUN tar -xzvf oci8-2.2.0.tgz && cd oci8-2.2.0 && phpize && ./configure --with-oci8=shared,instantclient,/usr/lib/instantclient_12_1 && make && make install
 
 COPY ./volume /
-COPY --from=builder /lib/ld-linux-x86-64.so.2 /lib/ld-linux-x86-64.so.2
-COPY --from=builder /lib64/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2
-COPY --from=builder /usr/glibc-compat/lib/ld-linux-x86-64.so.2 /libs/ld-linux-x86-64.so.2
-COPY --from=builder /usr/lib/php7/modules/oci8.so /usr/lib/php7/modules/oci8.so
-COPY --from=builder /usr/lib/libclntsh.so.12.1 /usr/lib/libclntsh.so.12.1
-COPY --from=builder /usr/lib/instantclient_12_1/* /usr/lib/instantclient_12_1/
 
 ENV ORACLE_BASE /usr/lib/instantclient_12_1
 ENV LD_LIBRARY_PATH /usr/lib/instantclient_12_1
@@ -63,12 +98,12 @@ RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/testing" >> /etc/apk/reposit
         php7-mcrypt \
         php7-opcache \
         php7-pdo \
-        php7-pdo_mysql \
-        php7-pdo_pgsql \
+#        php7-pdo_mysql \
+#        php7-pdo_pgsql \
         php7-pdo_sqlite \
         php7-pdo_odbc \
         php7-pdo_dblib \
-        php7-mongodb \
+#        php7-mongodb \
         php7-json \
         php7-xml \
         php7-xmlwriter \

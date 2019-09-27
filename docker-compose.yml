@@ -2,6 +2,9 @@ version: '3'
 
 services:
   app:
-    image: jgcl88/alpine-nginx-php:oracle
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    image: ryalb/alpine-nginx-php:oracle
     ports:
       - "80:80"
